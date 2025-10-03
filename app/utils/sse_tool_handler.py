@@ -395,11 +395,31 @@ class SSEToolHandler:
 
     def _post_process_args(self, args_obj: Dict[str, Any]) -> Dict[str, Any]:
         """统一的后处理方法"""
+        # 修复所有字符串值中的过度转义
+        args_obj = self._fix_string_escaping(args_obj)
+
         # 修复路径中的过度转义
         args_obj = self._fix_path_escaping_in_args(args_obj)
 
         # 修复命令中的多余引号
         args_obj = self._fix_command_quotes(args_obj)
+
+        return args_obj
+
+    def _fix_string_escaping(self, args_obj: Dict[str, Any]) -> Dict[str, Any]:
+        """修复所有字符串值中的过度转义"""
+        for key, value in args_obj.items():
+            if isinstance(value, str):
+                # 修复 \" -> "
+                # 在 JSON 字符串中，\\" 实际是单个反斜杠+引号
+                # 但在最终输出时，我们希望它是真正的引号
+                # 所以需要把 \\" (Python中是单个\加引号) 替换为引号
+                if '\\"' in value:
+                    original = value
+                    # 替换 \" 为 "
+                    value = value.replace('\\"', '"')
+                    args_obj[key] = value
+                    logger.debug(f"🔧 修复字段 {key} 的转义引号: ...{original[:50]} -> ...{value[:50]}")
 
         return args_obj
 
