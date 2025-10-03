@@ -410,16 +410,27 @@ class SSEToolHandler:
         """修复所有字符串值中的过度转义"""
         for key, value in args_obj.items():
             if isinstance(value, str):
+                original = value
+                modified = False
+
                 # 修复 \" -> "
-                # 在 JSON 字符串中，\\" 实际是单个反斜杠+引号
-                # 但在最终输出时，我们希望它是真正的引号
-                # 所以需要把 \\" (Python中是单个\加引号) 替换为引号
                 if '\\"' in value:
-                    original = value
-                    # 替换 \" 为 "
                     value = value.replace('\\"', '"')
+                    modified = True
+
+                # 修复 \\n -> \n (换行符)
+                if '\\n' in value:
+                    value = value.replace('\\n', '\n')
+                    modified = True
+
+                # 修复其他常见的转义序列
+                if '\\t' in value:
+                    value = value.replace('\\t', '\t')
+                    modified = True
+
+                if modified:
                     args_obj[key] = value
-                    logger.debug(f"🔧 修复字段 {key} 的转义引号: ...{original[:50]} -> ...{value[:50]}")
+                    logger.debug(f"🔧 修复字段 {key} 的转义: {len(original)} -> {len(value)} 字符")
 
         return args_obj
 
