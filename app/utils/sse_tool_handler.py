@@ -562,6 +562,9 @@ class SSEToolHandler:
 
     def _create_tool_arguments_chunk(self, arguments: str) -> Dict[str, Any]:
         """创建工具参数块"""
+        logger.info(f"📤 发送参数: {arguments[:200]}")
+        logger.info(f"📤 repr: {repr(arguments[:150])}")
+
         return {
             "id": f"chatcmpl-{int(time.time())}",
             "object": "chat.completion.chunk",
