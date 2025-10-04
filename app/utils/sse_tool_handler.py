@@ -73,7 +73,7 @@ class SSEToolHandler:
         """
         # 如果流已经结束，不再处理任何块
         if hasattr(self, 'stream_ended') and self.stream_ended:
-            logger.debug(f"🚫 流已结束，忽略后续块: phase={chunk_data.get('phase')}")
+            logger.info(f"🚫 流已结束，忽略后续块: phase={chunk_data.get('phase')}")
             return
 
         try:
@@ -261,10 +261,12 @@ class SSEToolHandler:
             # 因为 Claude Code 需要执行工具并发送结果后才会有新的对话
             yield "data: [DONE]\n\n"
 
-            # 重置所有状态，准备下一轮对话
-            self._reset_all_state()
-            # 设置标记，阻止后续阶段的处理
+            # 设置标记，阻止后续阶段的处理（必须在重置之前设置）
             self.stream_ended = True
+            logger.info(f"🚫 设置 stream_ended = True，阻止后续处理")
+
+            # 注意：不要重置所有状态，因为我们需要保持 stream_ended 标志
+            # self._reset_all_state() 会重置 stream_ended，导致后续块仍然被处理
 
     def _process_answer_phase(self, delta_content: str) -> Generator[str, None, None]:
         """处理回答阶段（优化版本）"""
