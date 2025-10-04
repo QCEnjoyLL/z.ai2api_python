@@ -42,6 +42,7 @@ class SSEToolHandler:
         # 状态管理
         self.current_phase = None
         self.has_tool_call = False
+        self.has_sent_role = False  # 跟踪是否已发送 role 字段
 
         # 工具调用状态
         self.tool_id = ""
@@ -263,6 +264,13 @@ class SSEToolHandler:
             return
 
         logger.info(f"📝 工具处理器收到答案内容: {delta_content[:50]}...")
+
+        # 如果这是工具调用后的第一次答案内容，确保发送 role
+        # 因为工具调用响应已经完成，后续的答案内容需要新的消息开始
+        if self.has_tool_call and not hasattr(self, 'answer_phase_started'):
+            # 标记答案阶段已开始
+            self.answer_phase_started = True
+            # 但不重置 has_sent_role，因为我们已经在同一个流中
 
         # 添加到缓冲区
         self.content_buffer += delta_content
@@ -531,32 +539,41 @@ class SSEToolHandler:
 
     def _create_content_chunk(self, content: str) -> Dict[str, Any]:
         """创建内容块"""
-        return {
+        chunk = {
             "id": f"chatcmpl-{int(time.time())}",
             "object": "chat.completion.chunk",
             "created": int(time.time()),
             "model": self.model,
+            "system_fingerprint": "fp_zai_001",
             "choices": [{
                 "index": 0,
                 "delta": {
-                    "role": "assistant",
                     "content": content
                 },
+                "logprobs": None,
                 "finish_reason": None
             }]
         }
 
+        # 只有在第一次发送内容时才包含 role
+        if not hasattr(self, 'has_sent_role') or not self.has_sent_role:
+            chunk["choices"][0]["delta"]["role"] = "assistant"
+            self.has_sent_role = True
+
+        return chunk
+
     def _create_tool_start_chunk(self) -> Dict[str, Any]:
         """创建工具开始块"""
-        return {
+        chunk = {
             "id": f"chatcmpl-{int(time.time())}",
-            "object": "chat.completion.chunk", 
+            "object": "chat.completion.chunk",
             "created": int(time.time()),
             "model": self.model,
+            "system_fingerprint": "fp_zai_001",
             "choices": [{
                 "index": 0,
                 "delta": {
-                    "role": "assistant",
+                    "content": None,  # 明确设置 content 为 null
                     "tool_calls": [{
                         "index": self.content_index,
                         "id": self.tool_id,
@@ -567,9 +584,17 @@ class SSEToolHandler:
                         }
                     }]
                 },
+                "logprobs": None,
                 "finish_reason": None
             }]
         }
+
+        # 如果还没有发送过 role，在第一个工具调用块中添加
+        if not hasattr(self, 'has_sent_role') or not self.has_sent_role:
+            chunk["choices"][0]["delta"]["role"] = "assistant"
+            self.has_sent_role = True
+
+        return chunk
 
     def _create_tool_arguments_chunk(self, arguments: str) -> Dict[str, Any]:
         """创建工具参数块"""
@@ -581,17 +606,19 @@ class SSEToolHandler:
             "object": "chat.completion.chunk",
             "created": int(time.time()),
             "model": self.model,
+            "system_fingerprint": "fp_zai_001",
             "choices": [{
                 "index": 0,
                 "delta": {
                     "tool_calls": [{
                         "index": self.content_index,
-                        "id": self.tool_id,
+                        # 不要重复发送 id，只发送参数更新
                         "function": {
                             "arguments": arguments
                         }
                     }]
                 },
+                "logprobs": None,
                 "finish_reason": None
             }]
         }
@@ -603,19 +630,19 @@ class SSEToolHandler:
             "object": "chat.completion.chunk",
             "created": int(time.time()),
             "model": self.model,
+            "system_fingerprint": "fp_zai_001",
             "choices": [{
                 "index": 0,
-                "delta": {
-                    "tool_calls": []
-                },
+                "delta": {},  # 完成时 delta 应该是空对象
+                "logprobs": None,
                 "finish_reason": "tool_calls"
             }]
         }
-        
+
         # 添加使用统计（如果有）
         if self.tool_call_usage:
             chunk["usage"] = self.tool_call_usage
-            
+
         return chunk
 
     def _reset_tool_state(self):
@@ -635,6 +662,7 @@ class SSEToolHandler:
         self._reset_tool_state()
         self.current_phase = None
         self.tool_call_usage = {}
+        self.has_sent_role = False  # 重置 role 发送标志
 
         # 重置缓冲区
         self.content_buffer = ""
