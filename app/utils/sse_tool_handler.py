@@ -192,8 +192,8 @@ class SSEToolHandler:
 
                 # 如果有活跃的工具调用，先完成它
                 if self.has_tool_call:
-                    # 补全参数并完成工具调用
-                    self.tool_args += '"'  # 补全最后的引号
+                    # 不要强行补全引号，让 json-repair 处理不完整的参数
+                    logger.debug(f"🔧 完成前的参数: {self.tool_args[:200]}...")
                     yield from self._finish_current_tool()
 
                 # 处理新工具调用
@@ -235,9 +235,11 @@ class SSEToolHandler:
                 # 从 metadata.arguments 获取参数起始部分
                 if "arguments" in metadata:
                     arguments_str = metadata["arguments"]
-                    # 去掉最后一个字符
-                    self.tool_args = arguments_str[:-1] if arguments_str.endswith('"') else arguments_str
-                    logger.debug(f"🎯 新工具调用: {self.tool_name}(id={self.tool_id}), 初始参数: {self.tool_args}")
+                    # 直接使用原始参数，不要手动去掉最后的引号
+                    # 因为参数可能是不完整的，json-repair 会处理
+                    self.tool_args = arguments_str
+                    logger.info(f"🎯 新工具调用: {self.tool_name}(id={self.tool_id}), 初始参数长度: {len(self.tool_args)}")
+                    logger.debug(f"   参数预览: {self.tool_args[:200]}...")
                 else:
                     self.tool_args = "{}"
                     logger.debug(f"🎯 新工具调用: {self.tool_name}(id={self.tool_id}), 空参数")
@@ -368,9 +370,18 @@ class SSEToolHandler:
         if not self.has_tool_call:
             return
 
+        # 检查参数完整性 - 如果参数看起来不完整，不要强行补全
+        # 因为强行补全可能会产生无效的 JSON
+        raw_args = self.tool_args
+
+        # 如果参数为空或只有开始括号，尝试使用空对象
+        if not raw_args or raw_args in ['{', '{"']:
+            logger.warning(f"⚠️ 工具参数为空或不完整: {repr(raw_args)}, 使用空对象")
+            raw_args = "{}"
+
         # 修复参数格式
-        fixed_args = self._fix_tool_arguments(self.tool_args)
-        logger.debug(f"✅ 完成工具调用: {self.tool_name}, 参数: {fixed_args}")
+        fixed_args = self._fix_tool_arguments(raw_args)
+        logger.debug(f"✅ 完成工具调用: {self.tool_name}, 参数: {fixed_args[:200]}")
 
         # 输出工具调用（开始 + 参数 + 完成）
         if self.stream:
