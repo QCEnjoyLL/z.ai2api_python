@@ -438,6 +438,11 @@ class SSEToolHandler:
             # 4. 生成最终结果
             fixed_result = json.dumps(args_obj, ensure_ascii=False)
 
+            # 调试日志：检查是否还有转义问题
+            if '\\"' in fixed_result or '\\\\u' in fixed_result:
+                logger.warning(f"⚠️ 最终结果仍含转义: {fixed_result[:200]}")
+                logger.debug(f"🔍 args_obj 类型: {type(args_obj)}, 内容: {str(args_obj)[:200]}")
+
             return fixed_result
 
         except Exception as e:
@@ -451,6 +456,19 @@ class SSEToolHandler:
         if not self.user_message:
             return ""
 
+        # 清理用户消息中的系统标记
+        cleaned_message = self.user_message
+        # 移除 Claude Code 的中断标记和其他系统标记
+        system_markers = [
+            '[Request interrupted by user]',
+            '[CANCELLED]',
+            '[STOPPED]',
+        ]
+        for marker in system_markers:
+            if marker in cleaned_message:
+                cleaned_message = cleaned_message.replace(marker, '').strip()
+                logger.debug(f"🧹 清理系统标记: {marker}")
+
         # 常见的文件名模式
         patterns = [
             r'(?:创建|新建|生成|写入|保存为?|文件名?[为是：:]\s*)([a-zA-Z0-9_\-]+\.(?:html|js|css|txt|md|json|xml|py|java|cpp|c|h|go|rs|php|rb|sh|bat|sql|yaml|yml))',
@@ -459,7 +477,7 @@ class SSEToolHandler:
         ]
 
         for pattern in patterns:
-            match = re.search(pattern, self.user_message, re.IGNORECASE)
+            match = re.search(pattern, cleaned_message, re.IGNORECASE)
             if match:
                 filename = match.group(1)
                 logger.info(f"📁 从用户消息中提取到文件名: {filename}")
@@ -468,7 +486,7 @@ class SSEToolHandler:
         # 如果没有明确的文件扩展名，尝试更宽松的匹配
         # 例如 "a.html" 或 "test.js"
         simple_pattern = r'\b([a-zA-Z0-9_\-]+\.[a-zA-Z0-9]+)\b'
-        matches = re.findall(simple_pattern, self.user_message)
+        matches = re.findall(simple_pattern, cleaned_message)
         if matches:
             # 返回第一个看起来像文件名的匹配
             for match in matches:
