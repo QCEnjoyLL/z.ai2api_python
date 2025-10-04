@@ -537,20 +537,33 @@ class SSEToolHandler:
     def _fix_unicode_escaping(self, args_obj: Dict[str, Any]) -> Dict[str, Any]:
         """修复双重Unicode转义问题"""
         import re
+        import codecs
+
+        def decode_unicode_escapes(text: str) -> str:
+            """安全地解码Unicode转义序列"""
+            if '\\u' not in text:
+                return text
+
+            try:
+                # 使用正则表达式替换 \uXXXX 序列
+                def replace_unicode(match):
+                    code = match.group(1)
+                    return chr(int(code, 16))
+
+                # 匹配 \uXXXX 格式（4位十六进制）
+                decoded = re.sub(r'\\u([0-9a-fA-F]{4})', replace_unicode, text)
+
+                if decoded != text:
+                    logger.debug(f"🔧 Unicode解码: {len(text)} -> {len(decoded)} 字符")
+
+                return decoded
+            except Exception as e:
+                logger.debug(f"⚠️ Unicode解码失败: {e}, 保持原值")
+                return text
 
         for key, value in args_obj.items():
             if isinstance(value, str):
-                # 检查是否包含 \uXXXX 格式的Unicode转义序列
-                if '\\u' in value:
-                    try:
-                        # 使用 encode().decode('unicode-escape') 解码Unicode转义
-                        # 但要注意：这会同时解码 \n、\t 等转义，所以需要先保护它们
-                        decoded = value.encode().decode('unicode-escape')
-                        if decoded != value:
-                            args_obj[key] = decoded
-                            logger.info(f"🔧 解码Unicode转义: {key}字段 {len(value)} -> {len(decoded)} 字符")
-                    except Exception as e:
-                        logger.debug(f"⚠️ Unicode解码失败: {e}, 保持原值")
+                args_obj[key] = decode_unicode_escapes(value)
 
             elif isinstance(value, dict):
                 args_obj[key] = self._fix_unicode_escaping(value)
@@ -560,12 +573,8 @@ class SSEToolHandler:
                 for item in value:
                     if isinstance(item, dict):
                         fixed_list.append(self._fix_unicode_escaping(item))
-                    elif isinstance(item, str) and '\\u' in item:
-                        try:
-                            decoded = item.encode().decode('unicode-escape')
-                            fixed_list.append(decoded)
-                        except:
-                            fixed_list.append(item)
+                    elif isinstance(item, str):
+                        fixed_list.append(decode_unicode_escapes(item))
                     else:
                         fixed_list.append(item)
                 args_obj[key] = fixed_list
