@@ -501,11 +501,28 @@ class SSEToolHandler:
                         logger.info(f"📁 找到可能的文件名: {match}")
                         return match
 
+        # 根据内容关键词推断文件名
+        keyword_mapping = {
+            r'登录页面|登陆页面|login.*页面': 'login.html',
+            r'注册页面|signup.*页面|register.*页面': 'register.html',
+            r'主页|首页|index.*页面|home.*页面': 'index.html',
+            r'关于页面|about.*页面': 'about.html',
+            r'联系页面|contact.*页面': 'contact.html',
+        }
+
+        for pattern, filename in keyword_mapping.items():
+            if re.search(pattern, cleaned_message, re.IGNORECASE):
+                logger.info(f"📁 根据关键词推断文件名: {filename}")
+                return filename
+
         logger.debug(f"❌ 无法从消息中提取文件名: {self.user_message[:100]}...")
         return ""
 
     def _post_process_args(self, args_obj: Dict[str, Any]) -> Dict[str, Any]:
         """统一的后处理方法"""
+        # 修复双重Unicode转义（如 \\u7528 -> 用）
+        args_obj = self._fix_unicode_escaping(args_obj)
+
         # 修复所有字符串值中的过度转义
         args_obj = self._fix_string_escaping(args_obj)
 
@@ -514,6 +531,44 @@ class SSEToolHandler:
 
         # 修复命令中的多余引号
         args_obj = self._fix_command_quotes(args_obj)
+
+        return args_obj
+
+    def _fix_unicode_escaping(self, args_obj: Dict[str, Any]) -> Dict[str, Any]:
+        """修复双重Unicode转义问题"""
+        import re
+
+        for key, value in args_obj.items():
+            if isinstance(value, str):
+                # 检查是否包含 \uXXXX 格式的Unicode转义序列
+                if '\\u' in value:
+                    try:
+                        # 使用 encode().decode('unicode-escape') 解码Unicode转义
+                        # 但要注意：这会同时解码 \n、\t 等转义，所以需要先保护它们
+                        decoded = value.encode().decode('unicode-escape')
+                        if decoded != value:
+                            args_obj[key] = decoded
+                            logger.info(f"🔧 解码Unicode转义: {key}字段 {len(value)} -> {len(decoded)} 字符")
+                    except Exception as e:
+                        logger.debug(f"⚠️ Unicode解码失败: {e}, 保持原值")
+
+            elif isinstance(value, dict):
+                args_obj[key] = self._fix_unicode_escaping(value)
+
+            elif isinstance(value, list):
+                fixed_list = []
+                for item in value:
+                    if isinstance(item, dict):
+                        fixed_list.append(self._fix_unicode_escaping(item))
+                    elif isinstance(item, str) and '\\u' in item:
+                        try:
+                            decoded = item.encode().decode('unicode-escape')
+                            fixed_list.append(decoded)
+                        except:
+                            fixed_list.append(item)
+                    else:
+                        fixed_list.append(item)
+                args_obj[key] = fixed_list
 
         return args_obj
 
@@ -725,8 +780,15 @@ class SSEToolHandler:
 
     def _create_tool_arguments_chunk(self, arguments: str) -> Dict[str, Any]:
         """创建工具参数块"""
-        logger.info(f"📤 发送参数: {arguments[:200]}")
-        logger.info(f"📤 repr: {repr(arguments[:150])}")
+        # 安全的参数预览（避免泄露敏感路径）
+        try:
+            args_preview = json.loads(arguments) if arguments else {}
+            # 移除可能包含路径的字段
+            safe_preview = {k: (v if k not in ['file_path', 'path', 'directory'] else '[REDACTED]')
+                           for k, v in (args_preview.items() if isinstance(args_preview, dict) else [])}
+            logger.info(f"📤 发送参数: {json.dumps(safe_preview, ensure_ascii=False)[:200]}")
+        except:
+            logger.info(f"📤 发送参数: {arguments[:50]}...")
 
         return {
             "id": f"chatcmpl-{int(time.time())}",
