@@ -43,6 +43,7 @@ class SSEToolHandler:
         self.current_phase = None
         self.has_tool_call = False
         self.has_sent_role = False  # 跟踪是否已发送 role 字段
+        self.stream_ended = False  # 跟踪流是否已结束
 
         # 工具调用状态
         self.tool_id = ""
@@ -70,6 +71,11 @@ class SSEToolHandler:
         Yields:
             str: OpenAI 格式的 SSE 响应行
         """
+        # 如果流已经结束，不再处理任何块
+        if hasattr(self, 'stream_ended') and self.stream_ended:
+            logger.debug(f"🚫 流已结束，忽略后续块: phase={chunk_data.get('phase')}")
+            return
+
         try:
             phase = chunk_data.get("phase")
             edit_content = chunk_data.get("edit_content", "")
@@ -251,13 +257,14 @@ class SSEToolHandler:
             # 完成当前工具调用
             yield from self._finish_current_tool()
 
-            # 不在这里发送 [DONE]，因为后续可能还有 answer 阶段
-            # 流结束标记应该在 done 阶段或整个流真正结束时发送
+            # 工具调用完成后，应该结束这个流
+            # 因为 Claude Code 需要执行工具并发送结果后才会有新的对话
+            yield "data: [DONE]\n\n"
 
-            # 重置工具相关状态，但不重置所有状态
-            self._reset_tool_state()
-            # 标记已经完成了工具调用，为后续的 answer 阶段做准备
-            self.tool_call_completed = True
+            # 重置所有状态，准备下一轮对话
+            self._reset_all_state()
+            # 设置标记，阻止后续阶段的处理
+            self.stream_ended = True
 
     def _process_answer_phase(self, delta_content: str) -> Generator[str, None, None]:
         """处理回答阶段（优化版本）"""
@@ -666,6 +673,7 @@ class SSEToolHandler:
         self.current_phase = None
         self.tool_call_usage = {}
         self.has_sent_role = False  # 重置 role 发送标志
+        self.stream_ended = False  # 重置流结束标志
 
         # 重置缓冲区
         self.content_buffer = ""
