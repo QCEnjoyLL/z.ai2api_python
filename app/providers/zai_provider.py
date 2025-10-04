@@ -269,8 +269,9 @@ class ZAIProvider(BaseProvider):
                 # 流式响应
                 return self._create_stream_response_with_retry(request, transformed)
             else:
-                # 非流式响应
-                async with httpx.AsyncClient(timeout=30.0) as client:
+                # 非流式响应 - 配置超时
+                timeout_config = httpx.Timeout(10.0, read=30.0, write=10.0, pool=5.0)
+                async with httpx.AsyncClient(timeout=timeout_config) as client:
                     response = await client.post(
                         transformed["url"],
                         headers=transformed["headers"],
@@ -319,7 +320,9 @@ class ZAIProvider(BaseProvider):
                     transformed["headers"]["Authorization"] = f"Bearer {new_token}"
                     current_token = new_token
 
-                async with httpx.AsyncClient(timeout=60.0) as client:
+                # 配置超时：连接10s，读取60s，总时长120s
+                timeout_config = httpx.Timeout(10.0, read=60.0, write=10.0, pool=5.0)
+                async with httpx.AsyncClient(timeout=timeout_config) as client:
                     # 发送请求到上游
                     self.logger.info(f"🎯 发送请求到 Z.AI: {transformed['url']}")
                     async with client.stream(
@@ -329,14 +332,14 @@ class ZAIProvider(BaseProvider):
                         headers=transformed["headers"],
                     ) as response:
                         # 检查响应状态码
-                        if response.status_code == 400:
+                        if response.status_code in [400, 502, 503, 504]:
                             # 400 错误，触发重试
                             error_text = await response.aread()
                             error_msg = error_text.decode('utf-8', errors='ignore')
-                            self.logger.warning(f"❌ 上游返回 400 错误 (尝试 {retry_count + 1}/{settings.MAX_RETRIES + 1})")
+                            self.logger.warning(f"❌ 上游返回 {response.status_code} 错误 (尝试 {retry_count + 1}/{settings.MAX_RETRIES + 1}): {error_msg[:200]}")
 
                             retry_count += 1
-                            last_error = f"400 Bad Request: {error_msg}"
+                            last_error = f"{response.status_code} Error: {error_msg[:500]}"
 
                             # 如果还有重试机会，继续循环
                             if retry_count <= settings.MAX_RETRIES:
@@ -348,7 +351,7 @@ class ZAIProvider(BaseProvider):
                                     "error": {
                                         "message": f"Request failed after {settings.MAX_RETRIES} retries: {last_error}",
                                         "type": "upstream_error",
-                                        "code": 400
+                                        "code": response.status_code
                                     }
                                 }
                                 yield f"data: {json.dumps(error_response)}\n\n"
@@ -468,12 +471,20 @@ class ZAIProvider(BaseProvider):
         # 处理SSE流
         buffer = ""
         line_count = 0
+        last_data_time = time.time()
+        heartbeat_timeout = 90  # 90秒无数据则超时
         self.logger.debug("📡 开始接收 SSE 流数据...")
 
         try:
             async for line in response.aiter_lines():
+                # 更新最后数据时间
+                last_data_time = time.time()
                 line_count += 1
                 if not line:
+                    # 空行时检查心跳超时
+                    if time.time() - last_data_time > heartbeat_timeout:
+                        self.logger.error(f"❌ 心跳超时：{heartbeat_timeout}秒内无数据")
+                        raise TimeoutError(f"No data received for {heartbeat_timeout} seconds")
                     continue
 
                 # 累积到buffer处理完整的数据行
