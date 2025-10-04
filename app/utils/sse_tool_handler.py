@@ -657,13 +657,22 @@ class SSEToolHandler:
             text = '{' + text
             logger.debug(f"🔧 补全开始括号")
 
-        # 2. 修复末尾多余的反斜杠和引号（json-repair 可能处理不当）
+        # 2. 修复 Unicode 转义序列后的多余转义引号
+        # 问题模式: \u7ed3\u6784\" 应该是 \u7ed3\u6784"
+        # 这是 Z.AI 截断参数时产生的异常模式
+        pattern = r'(\\u[0-9a-fA-F]{4})\\"'
+        if re.search(pattern, text):
+            text = re.sub(pattern, r'\1"', text)
+            logger.debug(f"🔧 修复Unicode后的多余转义引号")
+
+        # 3. 修复末尾多余的反斜杠和引号（json-repair 可能处理不当）
         # 匹配模式：字符串值末尾的 \" 后面跟着 } 或 ,
         # 例如：{"url":"https://www.bilibili.com\"} -> {"url":"https://www.bilibili.com"}
         # 例如：{"url":"https://www.bilibili.com\",} -> {"url":"https://www.bilibili.com",}
-        pattern = r'([^\\])\\"([}\s,])'
-        if re.search(pattern, text):
-            text = re.sub(pattern, r'\1"\2', text)
+        # 注意：要排除 Unicode 后的情况，因为已经在上面处理了
+        pattern2 = r'([^\\u])\\"([}\s,])'
+        if re.search(pattern2, text):
+            text = re.sub(pattern2, r'\1"\2', text)
             logger.debug(f"🔧 修复末尾多余的反斜杠")
 
         return text
