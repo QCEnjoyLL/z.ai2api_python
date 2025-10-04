@@ -251,12 +251,13 @@ class SSEToolHandler:
             # 完成当前工具调用
             yield from self._finish_current_tool()
 
-            # 发送流结束标记
-            if self.stream:
-                yield "data: [DONE]\n\n"
+            # 不在这里发送 [DONE]，因为后续可能还有 answer 阶段
+            # 流结束标记应该在 done 阶段或整个流真正结束时发送
 
-            # 重置状态
-            self._reset_all_state()
+            # 重置工具相关状态，但不重置所有状态
+            self._reset_tool_state()
+            # 标记已经完成了工具调用，为后续的 answer 阶段做准备
+            self.tool_call_completed = True
 
     def _process_answer_phase(self, delta_content: str) -> Generator[str, None, None]:
         """处理回答阶段（优化版本）"""
@@ -265,12 +266,14 @@ class SSEToolHandler:
 
         logger.info(f"📝 工具处理器收到答案内容: {delta_content[:50]}...")
 
-        # 如果这是工具调用后的第一次答案内容，确保发送 role
-        # 因为工具调用响应已经完成，后续的答案内容需要新的消息开始
-        if self.has_tool_call and not hasattr(self, 'answer_phase_started'):
-            # 标记答案阶段已开始
-            self.answer_phase_started = True
-            # 但不重置 has_sent_role，因为我们已经在同一个流中
+        # 工具调用完成后的答案内容处理
+        # 注意：工具调用后的答案内容仍然是同一个助手消息的一部分，不需要新的 role
+        if hasattr(self, 'tool_call_completed') and self.tool_call_completed:
+            # 这是工具调用完成后的答案内容
+            # 不需要发送新的 role，因为我们还在同一个流中
+            logger.debug("📝 工具调用后的答案内容")
+            # 清除标记，避免重复处理
+            self.tool_call_completed = False
 
         # 添加到缓冲区
         self.content_buffer += delta_content

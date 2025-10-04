@@ -17,6 +17,7 @@ z.ai2api_python 的 SSEToolHandler 在生成 OpenAI 格式的流式响应时存�
 3. **content 字段处理**：工具调用时未明确设置 `content: null`
 4. **工具参数块格式**：重复发送了不必要的 `id` 字段
 5. **完成块格式**：`finish_reason: "tool_calls"` 时，delta 应该是空对象而不是包含空数组
+6. **流结束标记错误**：在工具调用完成的 other 阶段过早发送 `[DONE]`，导致流被提前终止
 
 ## 修复内容
 
@@ -120,6 +121,30 @@ def _create_tool_finish_chunk(self) -> Dict[str, Any]:
         }]
     }
     # ...
+```
+
+### 6. 修复流结束标记问题
+
+在 `_process_other_phase` 方法中，移除过早发送的 `[DONE]` 标记：
+
+```python
+def _process_other_phase(self, usage: Dict[str, Any], edit_content: str = "") -> Generator[str, None, None]:
+    # ... 省略前面的代码 ...
+
+    # 工具调用完成判断
+    if self.has_tool_call and edit_content and edit_content.startswith("null,"):
+        logger.info(f"🏁 检测到工具调用结束标记")
+
+        # 完成当前工具调用
+        yield from self._finish_current_tool()
+
+        # 不在这里发送 [DONE]，因为后续可能还有 answer 阶段
+        # 流结束标记应该在 done 阶段或整个流真正结束时发送
+
+        # 重置工具相关状态，但不重置所有状态
+        self._reset_tool_state()
+        # 标记已经完成了工具调用
+        self.tool_call_completed = True
 ```
 
 ## 测试方法
