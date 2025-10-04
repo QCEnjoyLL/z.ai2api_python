@@ -404,10 +404,12 @@ class SSEToolHandler:
             # 2. 使用 json-repair 进行主要修复
             from json_repair import repair_json
             repaired_json = repair_json(processed_args)
-            logger.debug(f"🔧 json-repair 修复结果: {repaired_json}")
+            logger.debug(f"🔧 json-repair 修复结果: {repaired_json[:200]}")
 
-            # 3. 解析并后处理
+            # 3. 解析JSON字符串为对象
+            # json.loads 会自动解码 Unicode 转义序列（\uXXXX → 中文字符）
             args_obj = json.loads(repaired_json)
+            logger.debug(f"🔧 JSON解析完成，对象类型: {type(args_obj)}")
 
             # 特殊处理：修复 Write 工具缺少 file_path 的问题
             if self.tool_name == "Write":
@@ -433,15 +435,13 @@ class SSEToolHandler:
                         args_obj[path_field] = file_path
                         logger.info(f"✅ 自动添加 {path_field}: {file_path}")
 
+            # 4. 后处理：修复转义、路径等问题
             args_obj = self._post_process_args(args_obj)
 
-            # 4. 生成最终结果
+            # 5. 序列化为 JSON 字符串
+            # ensure_ascii=False 确保中文字符不被转义为 \uXXXX
             fixed_result = json.dumps(args_obj, ensure_ascii=False)
-
-            # 调试日志：检查是否还有转义问题
-            if '\\"' in fixed_result or '\\\\u' in fixed_result:
-                logger.warning(f"⚠️ 最终结果仍含转义: {fixed_result[:200]}")
-                logger.debug(f"🔍 args_obj 类型: {type(args_obj)}, 内容: {str(args_obj)[:200]}")
+            logger.debug(f"🔧 最终JSON: {fixed_result[:200]}")
 
             return fixed_result
 
