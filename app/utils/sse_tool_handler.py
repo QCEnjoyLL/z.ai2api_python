@@ -218,10 +218,15 @@ class SSEToolHandler:
             if "data" in metadata_obj and "metadata" in metadata_obj["data"]:
                 metadata = metadata_obj["data"]["metadata"]
 
+                # 调试：打印完整的元数据
+                logger.info(f"📦 完整元数据: {json.dumps(metadata, ensure_ascii=False)[:500]}")
+
                 # 开始新的工具调用
                 self.tool_id = metadata.get("id", f"call_{int(time.time() * 1000000)}")
                 self.tool_name = metadata.get("name", "unknown")
                 self.has_tool_call = True
+
+                logger.info(f"🎯 检测到工具调用: name={self.tool_name}, id={self.tool_id}")
 
                 # 只有在这是第二个及以后的工具调用时才递增 index
                 # 第一个工具调用应该使用 index 0
