@@ -456,8 +456,20 @@ class ZAIProvider(BaseProvider):
                 # 查找最后一条用户消息
                 for msg in reversed(request.messages):
                     if msg.role == "user":
-                        user_message = msg.content if isinstance(msg.content, str) else ""
-                        self.logger.debug(f"🔍 提取用户消息: role={msg.role}, content类型={type(msg.content)}, 内容={user_message[:100] if user_message else '(空)'}")
+                        # 处理字符串和列表类型的 content
+                        if isinstance(msg.content, str):
+                            user_message = msg.content
+                        elif isinstance(msg.content, list):
+                            # 多模态消息：提取文本部分
+                            text_parts = []
+                            for part in msg.content:
+                                if hasattr(part, 'type') and part.type == 'text' and hasattr(part, 'text'):
+                                    text_parts.append(part.text)
+                                elif isinstance(part, dict) and part.get('type') == 'text':
+                                    text_parts.append(part.get('text', ''))
+                            user_message = ' '.join(text_parts)
+
+                        self.logger.debug(f"🔍 提取用户消息: role={msg.role}, content类型={type(msg.content).__name__}, 内容={user_message[:100] if user_message else '(空)'}")
                         break
 
             if not user_message:
