@@ -35,9 +35,10 @@ class SSEPhase(Enum):
 class SSEToolHandler:
     """SSE 工具调用处理器"""
 
-    def __init__(self, model: str, stream: bool = True):
+    def __init__(self, model: str, stream: bool = True, user_message: str = ""):
         self.model = model
         self.stream = stream
+        self.user_message = user_message  # 保存用户消息，用于提取文件名
 
         # 状态管理
         self.current_phase = None
@@ -408,15 +409,29 @@ class SSEToolHandler:
             # 3. 解析并后处理
             args_obj = json.loads(repaired_json)
 
-            # 特殊处理：如果工具是写文件相关，但缺少文件路径
-            if self.tool_name in ["write_file", "create_file", "str_replace_based_edit_tool", "str_replace_editor"]:
+            # 特殊处理：修复 Write 工具缺少 file_path 的问题
+            if self.tool_name == "Write":
+                if "content" in args_obj and "file_path" not in args_obj:
+                    # 尝试从用户消息中提取文件名
+                    file_path = self._extract_filename_from_context()
+                    if file_path:
+                        args_obj["file_path"] = file_path
+                        logger.info(f"✅ 自动添加文件路径: {file_path}")
+                    else:
+                        # 如果无法提取，使用默认值
+                        args_obj["file_path"] = "output.html"
+                        logger.warning(f"⚠️ 无法从上下文提取文件名，使用默认值: output.html")
+
+            # 其他文件操作工具的处理
+            elif self.tool_name in ["write_file", "create_file", "str_replace_based_edit_tool", "str_replace_editor"]:
                 if "content" in args_obj and "file_path" not in args_obj and "path" not in args_obj:
-                    # 尝试从内容或工具上下文推断文件名
-                    # 这里我们需要更多信息，暂时使用默认值
-                    logger.warning(f"⚠️ 工具 {self.tool_name} 缺少文件路径参数，尝试修复")
-                    # 检查是否在之前的消息中提到了文件名
-                    # 这需要更复杂的上下文分析，暂时先记录
-                    logger.error(f"❌ 无法自动推断文件路径，参数: {args_obj}")
+                    logger.warning(f"⚠️ 工具 {self.tool_name} 缺少文件路径参数")
+                    file_path = self._extract_filename_from_context()
+                    if file_path:
+                        # 根据不同工具使用不同的字段名
+                        path_field = "path" if self.tool_name == "str_replace_based_edit_tool" else "file_path"
+                        args_obj[path_field] = file_path
+                        logger.info(f"✅ 自动添加 {path_field}: {file_path}")
 
             args_obj = self._post_process_args(args_obj)
 
@@ -428,6 +443,44 @@ class SSEToolHandler:
         except Exception as e:
             logger.error(f"❌ JSON 修复失败: {e}, 原始参数: {raw_args[:1000]}..., 使用空参数")
             return "{}"
+
+    def _extract_filename_from_context(self) -> str:
+        """从用户消息中提取文件名"""
+        import re
+
+        if not self.user_message:
+            return ""
+
+        # 常见的文件名模式
+        patterns = [
+            r'(?:创建|新建|生成|写入|保存为?|文件名?[为是：:]\s*)([a-zA-Z0-9_\-]+\.(?:html|js|css|txt|md|json|xml|py|java|cpp|c|h|go|rs|php|rb|sh|bat|sql|yaml|yml))',
+            r'([a-zA-Z0-9_\-]+\.(?:html|js|css|txt|md|json|xml|py|java|cpp|c|h|go|rs|php|rb|sh|bat|sql|yaml|yml))(?:\s*文件)?',
+            r'(?:名为|叫做?|称为)\s*([a-zA-Z0-9_\-]+\.(?:html|js|css|txt|md|json|xml|py|java|cpp|c|h|go|rs|php|rb|sh|bat|sql|yaml|yml))',
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, self.user_message, re.IGNORECASE)
+            if match:
+                filename = match.group(1)
+                logger.info(f"📁 从用户消息中提取到文件名: {filename}")
+                return filename
+
+        # 如果没有明确的文件扩展名，尝试更宽松的匹配
+        # 例如 "a.html" 或 "test.js"
+        simple_pattern = r'\b([a-zA-Z0-9_\-]+\.[a-zA-Z0-9]+)\b'
+        matches = re.findall(simple_pattern, self.user_message)
+        if matches:
+            # 返回第一个看起来像文件名的匹配
+            for match in matches:
+                # 检查扩展名是否合理
+                if '.' in match:
+                    ext = match.split('.')[-1].lower()
+                    if len(ext) <= 4:  # 扩展名通常不超过4个字符
+                        logger.info(f"📁 找到可能的文件名: {match}")
+                        return match
+
+        logger.debug(f"❌ 无法从消息中提取文件名: {self.user_message[:100]}...")
+        return ""
 
     def _post_process_args(self, args_obj: Dict[str, Any]) -> Dict[str, Any]:
         """统一的后处理方法"""

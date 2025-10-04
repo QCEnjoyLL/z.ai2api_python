@@ -447,8 +447,19 @@ class ZAIProvider(BaseProvider):
         tool_handler = None
 
         if has_tools:
-            tool_handler = SSEToolHandler(model, stream=True)
+            # 提取最后一条用户消息，用于工具参数修复
+            user_message = ""
+            if request.messages:
+                # 查找最后一条用户消息
+                for msg in reversed(request.messages):
+                    if msg.role == "user":
+                        user_message = msg.content if isinstance(msg.content, str) else ""
+                        break
+
+            tool_handler = SSEToolHandler(model, stream=True, user_message=user_message)
             self.logger.info(f"🔧 初始化工具处理器: {len(transformed['body'].get('tools', []))} 个工具")
+            if user_message:
+                self.logger.debug(f"📝 用户消息: {user_message[:100]}...")
 
         # 处理状态
         has_thinking = False
