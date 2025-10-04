@@ -409,10 +409,14 @@ class SSEToolHandler:
             # 3. 解析JSON字符串为对象
             # json.loads 会自动解码 Unicode 转义序列（\uXXXX → 中文字符）
             args_obj = json.loads(repaired_json)
-            logger.debug(f"🔧 JSON解析完成，对象类型: {type(args_obj)}")
+            logger.debug(f"🔧 JSON解析完成，对象类型: {type(args_obj)}, 键: {list(args_obj.keys())}")
 
             # 特殊处理：修复 Write 工具缺少 file_path 的问题
             if self.tool_name == "Write":
+                logger.debug(f"🔍 Write工具参数检查: content存在={('content' in args_obj)}, file_path存在={('file_path' in args_obj)}")
+                if "file_path" in args_obj:
+                    logger.info(f"✅ Z.AI 已提供 file_path: {args_obj['file_path']}")
+
                 if "content" in args_obj and "file_path" not in args_obj:
                     # 尝试从用户消息中提取文件名
                     file_path = self._extract_filename_from_context()
