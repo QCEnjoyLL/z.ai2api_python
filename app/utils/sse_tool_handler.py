@@ -523,10 +523,11 @@ class SSEToolHandler:
         # 修复双重Unicode转义（如 \\u7528 -> 用）
         args_obj = self._fix_unicode_escaping(args_obj)
 
-        # 修复所有字符串值中的过度转义
-        args_obj = self._fix_string_escaping(args_obj)
+        # 注意：不再调用 _fix_string_escaping()
+        # 因为 json.loads() 已经正确解析了所有转义序列
+        # 额外的转义修复会破坏已经正确的数据结构
 
-        # 修复路径中的过度转义
+        # 修复路径中的过度转义（仅针对特定路径问题）
         args_obj = self._fix_path_escaping_in_args(args_obj)
 
         # 修复命令中的多余引号
