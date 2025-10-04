@@ -394,6 +394,7 @@ class SSEToolHandler:
         if not raw_args or raw_args == "{}":
             return "{}"
 
+        logger.info(f"🔧 原始参数 ({len(raw_args)} 字符): {raw_args[:500]}{'...' if len(raw_args) > 500 else ''}")
         logger.debug(f"🔧 开始修复参数: {raw_args[:1000]}{'...' if len(raw_args) > 1000 else ''}")
 
         # 统一的修复流程：预处理 -> json-repair -> 后处理
