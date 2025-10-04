@@ -407,6 +407,17 @@ class SSEToolHandler:
 
             # 3. 解析并后处理
             args_obj = json.loads(repaired_json)
+
+            # 特殊处理：如果工具是写文件相关，但缺少文件路径
+            if self.tool_name in ["write_file", "create_file", "str_replace_based_edit_tool", "str_replace_editor"]:
+                if "content" in args_obj and "file_path" not in args_obj and "path" not in args_obj:
+                    # 尝试从内容或工具上下文推断文件名
+                    # 这里我们需要更多信息，暂时使用默认值
+                    logger.warning(f"⚠️ 工具 {self.tool_name} 缺少文件路径参数，尝试修复")
+                    # 检查是否在之前的消息中提到了文件名
+                    # 这需要更复杂的上下文分析，暂时先记录
+                    logger.error(f"❌ 无法自动推断文件路径，参数: {args_obj}")
+
             args_obj = self._post_process_args(args_obj)
 
             # 4. 生成最终结果

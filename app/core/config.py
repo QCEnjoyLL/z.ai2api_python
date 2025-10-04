@@ -175,6 +175,7 @@ class Settings(BaseSettings):
 
     ANONYMOUS_MODE: bool = os.getenv("ANONYMOUS_MODE", "true").lower() == "true"
     TOOL_SUPPORT: bool = os.getenv("TOOL_SUPPORT", "true").lower() == "true"
+    TOOL_PASSTHROUGH: bool = os.getenv("TOOL_PASSTHROUGH", "false").lower() == "true"  # 直接透传工具调用，不处理
     SCAN_LIMIT: int = int(os.getenv("SCAN_LIMIT", "200000"))
     SKIP_AUTH_TOKEN: bool = os.getenv("SKIP_AUTH_TOKEN", "false").lower() == "true"
 
