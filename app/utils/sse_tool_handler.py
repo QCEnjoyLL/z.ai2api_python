@@ -496,7 +496,7 @@ class SSEToolHandler:
         return args_obj
 
     def _fix_string_escaping(self, args_obj: Dict[str, Any]) -> Dict[str, Any]:
-        """修复所有字符串值中的过度转义"""
+        """递归修复所有字符串值中的过度转义"""
         for key, value in args_obj.items():
             if isinstance(value, str):
                 original = value
@@ -520,6 +520,30 @@ class SSEToolHandler:
                 if modified:
                     args_obj[key] = value
                     logger.debug(f"🔧 修复字段 {key} 的转义: {len(original)} -> {len(value)} 字符")
+
+            elif isinstance(value, dict):
+                # 递归处理嵌套字典
+                args_obj[key] = self._fix_string_escaping(value)
+
+            elif isinstance(value, list):
+                # 递归处理列表中的每个元素
+                fixed_list = []
+                for item in value:
+                    if isinstance(item, dict):
+                        fixed_list.append(self._fix_string_escaping(item))
+                    elif isinstance(item, str):
+                        # 修复列表中的字符串
+                        fixed_item = item
+                        if '\\"' in item:
+                            fixed_item = item.replace('\\"', '"')
+                        if '\\n' in fixed_item:
+                            fixed_item = fixed_item.replace('\\n', '\n')
+                        if '\\t' in fixed_item:
+                            fixed_item = fixed_item.replace('\\t', '\t')
+                        fixed_list.append(fixed_item)
+                    else:
+                        fixed_list.append(item)
+                args_obj[key] = fixed_list
 
         return args_obj
 
