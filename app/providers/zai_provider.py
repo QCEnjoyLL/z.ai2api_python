@@ -457,12 +457,16 @@ class ZAIProvider(BaseProvider):
                 for msg in reversed(request.messages):
                     if msg.role == "user":
                         user_message = msg.content if isinstance(msg.content, str) else ""
+                        self.logger.debug(f"🔍 提取用户消息: role={msg.role}, content类型={type(msg.content)}, 内容={user_message[:100] if user_message else '(空)'}")
                         break
 
+            if not user_message:
+                self.logger.warning(f"⚠️ 未找到用户消息，消息列表: {[(m.role, type(m.content).__name__) for m in request.messages]}")
+
             tool_handler = SSEToolHandler(model, stream=True, user_message=user_message)
-            self.logger.info(f"🔧 初始化工具处理器: {len(transformed['body'].get('tools', []))} 个工具")
+            self.logger.info(f"🔧 初始化工具处理器: {len(transformed['body'].get('tools', []))} 个工具, 用户消息长度={len(user_message)}")
             if user_message:
-                self.logger.debug(f"📝 用户消息: {user_message[:100]}...")
+                self.logger.info(f"📝 用户消息内容: {user_message[:200]}...")
 
         # 处理状态
         has_thinking = False
