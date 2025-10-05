@@ -407,12 +407,6 @@ A: 有两种方式配置 LongCat 认证：
                                                                    └─────────────────┘
 ```
 
-## ⭐ Star History
-
-If you like this project, please give it a star ⭐  
-
-[![Star History Chart](https://api.star-history.com/svg?repos=ZyphrZero/z.ai2api_python&type=Date)](https://star-history.com/#ZyphrZero/z.ai2api_python&Date)
-
 
 ## 🤝 贡献指南
 
